@@ -4,87 +4,96 @@ import os
 from dotenv import load_dotenv
 
 from telethon import TelegramClient, events
+import socks  # pip install pysocks
 
-# === Загрузка переменных из .env ===
-load_dotenv()  # автоматически ищет файл .env в текущей папке
+# === Загрузка настроек ===
+load_dotenv()
 
-# Получаем api_id и api_hash
-try:
-    api_id = int(os.getenv("api_id"))
-    api_hash = os.getenv("api_hash")
-except (TypeError, ValueError):
-    print("❌ Ошибка: api_id или api_hash не найдены в .env файле или имеют неверный формат.")
-    print("Проверьте файл .env и убедитесь, что api_id — это число.")
-    exit(1)
+api_id = int(os.getenv("api_id"))
+api_hash = os.getenv("api_hash")
 
 if not api_id or not api_hash:
-    print("❌ Ошибка: api_id и api_hash должны быть указаны в файле .env")
+    print("❌ Ошибка: api_id и api_hash не найдены в .env")
     exit(1)
 
-client = TelegramClient('hashtag_collector_session', api_id, api_hash)
+# === Настройка прокси из .env ===
+proxy = None
+proxy_type = os.getenv("proxy_type", "").lower()
+proxy_host = os.getenv("proxy_host")
+proxy_port = os.getenv("proxy_port")
+
+if proxy_type == "socks5" and proxy_host and proxy_port:
+    proxy = (
+        socks.SOCKS5,
+        proxy_host,
+        int(proxy_port),
+        True,  # rdns
+        os.getenv("proxy_username") or None,
+        os.getenv("proxy_password") or None,
+    )
+    print(f"✅ Используется SOCKS5 прокси: {proxy_host}:{proxy_port}")
+else:
+    print("⚠️ Прокси не настроен — будет прямое подключение (может не работать с VPN)")
+
+# Создаём клиента с прокси
+client = TelegramClient(
+    'hashtag_collector_session',
+    api_id,
+    api_hash,
+    proxy=proxy,
+    connection_retries=15,
+    retry_delay=3,
+    timeout=30
+)
 
 @client.on(events.NewMessage(pattern=r'^/collect\s+(.+)'))
 async def collect_hashtag(event):
-    """Обработчик команды /collect #хэштег"""
     raw_tag = event.pattern_match.group(1).strip()
     hashtag = raw_tag if raw_tag.startswith('#') else f'#{raw_tag}'
 
-    await event.reply(f'🔍 Ищу все сообщения с хэштегом **{hashtag}** в этом чате...\n'
-                      f'Это может занять время.')
+    chat_title = event.chat.title if hasattr(event.chat, 'title') and event.chat.title else "Этот чат"
+    
+    await event.reply(f'🔍 Ищу сообщения с **{hashtag}** в чате:\n**{chat_title}**\n\nЭто может занять время...')
 
     messages = []
     try:
-        async for message in client.iter_messages(
-            event.chat_id,
-            search=hashtag,
-            limit=None  # собираем всю историю
-        ):
+        async for message in client.iter_messages(event.chat_id, search=hashtag, limit=None):
             if message.text:
                 messages.append({
                     'date': message.date.isoformat(),
                     'sender_id': message.sender_id,
                     'message_id': message.id,
                     'text': message.text,
-                    'link': f"https://t.me/c/{str(event.chat_id)[4:]}/{message.id}"
-                    if str(event.chat_id).startswith('-100') else None
+                    'link': f"https://t.me/c/{str(event.chat_id)[4:]}/{message.id}" 
+                            if str(event.chat_id).startswith('-100') else None
                 })
     except Exception as e:
-        await event.reply(f'❌ Ошибка при поиске: {str(e)}')
+        await event.reply(f'❌ Ошибка поиска: {str(e)}')
         return
 
     if not messages:
-        await event.reply(f'😔 Сообщений с хэштегом **{hashtag}** не найдено.')
+        await event.reply(f'😔 Сообщений с {hashtag} не найдено.')
         return
 
-    # Сохраняем результат
     filename = f"messages_{hashtag.replace('#', '')}.json"
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(messages, f, ensure_ascii=False, indent=4)
 
     await event.reply(
-        f'✅ Найдено **{len(messages)}** сообщений с хэштегом **{hashtag}**.\n'
-        f'Файл прикреплён ниже.'
+        f'✅ Найдено **{len(messages)}** сообщений с **{hashtag}** в чате **{chat_title}**.\n'
+        f'Файл прикреплён.'
     )
-
-    await client.send_file(
-        event.chat_id,
-        filename,
-        caption=f'📁 Все сообщения с {hashtag} из истории чата'
-    )
+    await client.send_file(event.chat_id, filename, caption=f'Все сообщения с {hashtag}')
 
 
 async def main():
+    print("🚀 Запуск клиента...")
     await client.start()
-    print('✅ Бот успешно запущен!')
-    print('   Команда для использования:')
-    print('   /collect #хэштег')
-    print('   или')
-    print('   /collect хэштег  (без #)')
+    print("✅ Успешно подключено к Telegram!")
+    print("   Теперь добавь этот аккаунт в нужный чат и напиши там:")
+    print("   /collect #хэштег")
     await client.run_until_disconnected()
 
 
 if __name__ == '__main__':
-    # Установка библиотеки (можно выполнить один раз):
-    # pip install telethon python-dotenv
-
     asyncio.run(main())
