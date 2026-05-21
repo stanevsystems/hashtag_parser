@@ -1,0 +1,18 @@
+services:
+  bot:
+    image: hashtag-ideas-bot:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hashtag-ideas-bot
+    env_file:
+      - .env
+    environment:
+      # v2rayN / Clash на хосте: mixed 10808
+      PROXY_HOST: host.docker.internal
+    volumes:
+      - ./data:/app/data
+      - ./secrets:/app/secrets:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

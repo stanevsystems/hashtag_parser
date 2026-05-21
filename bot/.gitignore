@@ -1,0 +1,22 @@
+# Secrets and credentials
+.env
+secrets/*
+!secrets/.gitkeep
+
+# Telethon session
+*.session
+*.session-journal
+
+# Runtime data
+data/repo/
+data/state.json
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db

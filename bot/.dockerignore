@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+data/repo/
+.git/
+*.md
+!README.md
+setup.ps1
+run.ps1
+docker/*.ps1
